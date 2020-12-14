@@ -71,6 +71,7 @@ int lb_endpoint_connect(lb_endpoint_t& ep) {
 		return -errno;
 	}
 	if (ep.mark != 0) {
+		Logger::getLogger().info("set mark for %s: 0x%x\n", ep.addr_str, ep.mark);
 		if (::setsockopt(ep.fd, SOL_SOCKET, SO_MARK, &ep.mark, sizeof(ep.mark)) < 0) {
 			close(ep.fd);
 			ep.fd = -1;
@@ -103,18 +104,16 @@ int do_forward(recv_buffer& buffer, forward_status_t& status) {
 		(const sockaddr*)&dst->addr, dst->sockaddr_length());
 	if (send_len < 0) {
 		// error
+		buffer.peer.update_addr_str();
 		Logger::getLogger().error("dst addr %s fd %d mark %d sendto error: %s\n", dst->addr_str, dst->fd, dst->mark, strerror(errno));
-		if (errno == EBADF) {
-			Logger::getLogger().error("reopening socket...");
-			close(send_ep->fd);
-			send_ep->fd = -1;
-			if (send_ep->is_inbound)lb_endpoint_listen(*send_ep);
-			else lb_endpoint_connect(*send_ep);
-		}
 		return -errno;
 	}
-	Logger::getLogger().debug("%s -> %s -> %s@%d:%d %d/%d bytes\n", buffer.peer.addr_str,
-		buffer.ep_arrive->addr_str, dst->addr_str, dst->fd, dst->mark, send_len, buffer.buffer_size);
+	if (Logger::getLogger().testLevel(Logger::LogLevel::Debug)) {
+		buffer.peer.update_addr_str();
+		dst->update_addr_str();
+		Logger::getLogger().debug("%s -> %s -> %s@%d:%d %d/%d bytes\n", buffer.peer.addr_str,
+			buffer.ep_arrive->addr_str, dst->addr_str, dst->fd, dst->mark, send_len, buffer.buffer_size);
+	}
 	return 0;
 }
 
@@ -222,7 +221,6 @@ WAIT_LOOP:
 					continue;
 				}
 				buffer.buffer_size = buffer_len;
-				buffer.peer.update_addr_str();
 				// send
 				do_forward(buffer, status);
 				--i; // continue to recv on same fd until there is no more data available

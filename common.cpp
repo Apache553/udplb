@@ -60,5 +60,4 @@ void lb_endpoint_t::set_peer(lb_endpoint_t& peer)
 	this->peer->fd = this->fd;
 	this->peer->mark = this->mark;
 	this->peer->addr = peer.addr;
-	strcpy(this->peer->addr_str, peer.addr_str);
 }
