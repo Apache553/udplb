@@ -82,25 +82,35 @@ int lb_endpoint_connect(lb_endpoint_t& ep) {
 
 int do_forward(recv_buffer& buffer, forward_status_t& status) {
 	lb_endpoint_t* dst = nullptr;
+	lb_endpoint_t* send_ep = nullptr;
 	if (buffer.ep_arrive->is_inbound) {
 		// inbound -> outbound
 		// update inbound peer
 		buffer.ep_arrive->set_peer(buffer.peer);
 		// do forward
 		size_t outbound_idx = (status.outbound_poll_idx++) % status.args->outbounds.size();
-		dst = &status.args->outbounds[outbound_idx];
+		send_ep = &status.args->outbounds[outbound_idx];
+		dst = send_ep;
 	}
 	else {
 		// outbound -> inbound
 		size_t inbound_idx = (status.inbound_poll_idx++) % status.args->inbounds.size();
-		dst = *&status.args->inbounds[inbound_idx].peer;
+		send_ep = &status.args->inbounds[inbound_idx];
+		dst = send_ep->peer;
 	}
 	// send
 	ssize_t send_len = ::sendto(dst->fd, buffer.buffer, buffer.buffer_size, 0,
 		(const sockaddr*)&dst->addr, dst->sockaddr_length());
 	if (send_len < 0) {
 		// error
-		Logger::getLogger().error("sendto error: %s\n", strerror(errno));
+		Logger::getLogger().error("dst addr %s fd %d mark %d sendto error: %s\n", dst->addr_str, dst->fd, dst->mark, strerror(errno));
+		if (errno == EBADF) {
+			Logger::getLogger().error("reopening socket...");
+			close(send_ep->fd);
+			send_ep->fd = -1;
+			if (send_ep->is_inbound)lb_endpoint_listen(*send_ep);
+			else lb_endpoint_connect(*send_ep);
+		}
 		return -errno;
 	}
 	Logger::getLogger().debug("%s -> %s -> %s@%d:%d %d/%d bytes\n", buffer.peer.addr_str,

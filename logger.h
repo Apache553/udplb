@@ -7,9 +7,9 @@ public:
 	static Logger& getLogger();
 public:
 	enum class LogLevel {
-		Info = 1,
+		Error = 1,
 		Warning = 2,
-		Error = 3,
+		Info = 3,
 		Debug = 4
 	};
 	void setLevel(LogLevel level);
