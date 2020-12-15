@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <limits>
 #include <cassert>
+#include <csignal>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -27,9 +28,21 @@ struct forward_status_t {
 };
 
 
-int lb_endpoint_set_sock_nonblock(lb_endpoint_t& ep) {
+int lb_endpoint_set_sockopt(lb_endpoint_t& ep) {
+	int ret;
+	int value = 16777216;
 	if (ep.fd == -1)return -EINVAL;
-	if (int ret = ::fcntl(ep.fd, F_SETFL, O_NONBLOCK)<0) {
+	if ((ret = ::fcntl(ep.fd, F_SETFL, O_NONBLOCK)) < 0) {
+		return -errno;
+	}
+	if ((ret = ::setsockopt(ep.fd, SOL_SOCKET, SO_RCVBUF, &value, sizeof(value))) < 0) {
+		close(ep.fd);
+		ep.fd = -1;
+		return -errno;
+	}
+	if ((ret = ::setsockopt(ep.fd, SOL_SOCKET, SO_SNDBUF, &value, sizeof(value))) < 0) {
+		close(ep.fd);
+		ep.fd = -1;
 		return -errno;
 	}
 	return 0;
@@ -41,7 +54,7 @@ int lb_endpoint_listen(lb_endpoint_t& ep) {
 	if ((ep.fd = ::socket(ep.family, SOCK_DGRAM, IPPROTO_UDP)) < 0) {
 		return -errno;
 	}
-	if (int ret = lb_endpoint_set_sock_nonblock(ep)) {
+	if (int ret = lb_endpoint_set_sockopt(ep)) {
 		close(ep.fd);
 		ep.fd = -1;
 		return ret;
@@ -60,7 +73,7 @@ int lb_endpoint_connect(lb_endpoint_t& ep) {
 	if ((ep.fd = ::socket(ep.family, SOCK_DGRAM, IPPROTO_UDP)) < 0) {
 		return -errno;
 	}
-	if (int ret = lb_endpoint_set_sock_nonblock(ep)) {
+	if (int ret = lb_endpoint_set_sockopt(ep)) {
 		close(ep.fd);
 		ep.fd = -1;
 		return ret;
@@ -117,7 +130,15 @@ int do_forward(recv_buffer& buffer, forward_status_t& status) {
 	return 0;
 }
 
+void sigint_handler(int sig) {
+	// make program to exit gracefully
+	exit(0);
+}
+
 int main(int argc, const char** argv) {
+
+	signal(SIGINT, sigint_handler);
+
 	args_t args;
 	int ret;
 	if ((ret = parse_args(argc, argv, args)) < 0) {
